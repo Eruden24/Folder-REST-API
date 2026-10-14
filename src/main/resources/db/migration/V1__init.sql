@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS folder (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    parent_id BIGINT,
+    subject VARCHAR(50) NOT NULL
+);

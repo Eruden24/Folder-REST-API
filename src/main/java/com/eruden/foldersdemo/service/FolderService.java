@@ -5,7 +5,7 @@ import com.eruden.foldersdemo.controller.dto.request.FolderSubjectRequest;
 import com.eruden.foldersdemo.controller.dto.response.FolderAllFieldsResponse;
 import com.eruden.foldersdemo.controller.dto.response.FolderResponse;
 import com.eruden.foldersdemo.entity.Folder;
-import com.eruden.foldersdemo.exception.ValidationException;
+import com.eruden.foldersdemo.exception.NotFoundException;
 import com.eruden.foldersdemo.repository.FolderRepository;
 import com.eruden.foldersdemo.service.mapper.FolderServiceMapper;
 import com.eruden.foldersdemo.service.validator.FolderServiceValidator;
@@ -13,6 +13,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -29,12 +30,9 @@ public class FolderService {
 
         Folder folder = folderServiceMapper.toFolder(request);
 
-        folder.setParentFolder(findParent(request.getParentId()));
-        Folder saved = folderRepository.save(folder);
-
-        return folderServiceMapper.toFolderResponse(saved);
+        return folderServiceMapper.toFolderResponse(folderRepository.save(folder));
     }
-
+    
     @Transactional
     public FolderResponse delete(Long id) {
         Folder folder = findFolder(id);
@@ -57,7 +55,6 @@ public class FolderService {
 
         Folder folder = findFolder(id);
         folderServiceMapper.updateFolder(request, folder);
-        folder.setParentFolder(findParent(request.getParentId()));
 
         return folderServiceMapper.toFolderAllFieldsResponse(folderRepository.saveAndFlush(folder));
     }
@@ -79,17 +76,16 @@ public class FolderService {
 
     private Folder findFolder(Long id) {
         return folderRepository.findById(id).orElseThrow(
-                () -> new ValidationException("Folder not found")
+                () -> new NotFoundException("Folder not found")
         );
     }
 
-    private Folder findParent(Long id) {
-        if (id == null) {
-            return null;
-        }
+    public List<FolderAllFieldsResponse> getChildren(Long parentId) {
 
-        return folderRepository.findById(id).orElseThrow(
-                () -> new ValidationException("Parent folder id not found!")
-        );
+        List<Folder> children = (parentId == null)
+                ? folderRepository.findAllByParentFolderIsNull()
+                : folderRepository.findAllByParentFolderId(parentId);
+
+        return folderServiceMapper.toFolderAllFieldsResponses(children);
     }
 }

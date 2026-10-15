@@ -5,25 +5,26 @@ import com.eruden.foldersdemo.controller.dto.request.FolderSubjectRequest;
 import com.eruden.foldersdemo.controller.dto.response.FolderAllFieldsResponse;
 import com.eruden.foldersdemo.controller.dto.response.FolderResponse;
 import com.eruden.foldersdemo.entity.Folder;
+import com.eruden.foldersdemo.service.helper.FolderServiceMapperHelper;
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 
 import java.util.List;
 
-@Mapper(componentModel="spring")
+@Mapper(componentModel="spring", uses={FolderServiceMapperHelper.class})
 public interface FolderServiceMapper {
 
     // Request -> Entity
     @Mapping(target="id", ignore = true)
-    @Mapping(target="parentFolder", ignore = true)
+    @Mapping(target="parentFolder", source = "parentId", qualifiedByName = "parentIdToParentFolder")
     @Mapping(target="createdAt", ignore=true)
     @Mapping(target="updatedAt", ignore=true)
     @Mapping(target="subject", source="subject")
     Folder toFolder(FolderRequest request);
 
     @Mapping(target="id",  ignore = true)
-    @Mapping(target="parentFolder",  ignore = true)
+    @Mapping(target="parentFolder", source = "parentId", qualifiedByName = "parentIdToParentFolder")
     @Mapping(target="createdAt",  ignore = true)
     @Mapping(target="updatedAt",  ignore = true)
     @Mapping(target="subject", source="subject")

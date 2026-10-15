@@ -1,4 +1,4 @@
-package com.eruden.foldersdemo.controller.dto;
+package com.eruden.foldersdemo.controller.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -11,11 +11,11 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class FolderCreateRequest {
-
-    private Long parentId;
+public class FolderRequest {
 
     @NotBlank
-    @Size(max = 50)
+    @Size(max=50)
     private String subject;
+
+    private Long parentId;
 }

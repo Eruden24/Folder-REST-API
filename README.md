@@ -11,6 +11,18 @@ Folders can be created, renamed, moved and deleted; each folder can contain subf
 - **springdoc-openapi** (Swagger UI)
 - **JUnit 5**, **Mockito**, **AssertJ**, **MockMvc**, **Testcontainers**, **JaCoCo**
 
+## Running with Docker
+
+**Requirements:** Docker with Compose. No Java or MySQL install needed.
+
+```bash
+cp .env.example .env   # then pick any DB_USERNAME (not root) and DB_PASSWORD
+docker compose up --build
+```
+
+This starts MySQL 8.4 and the app on http://localhost:8080. Data is kept in a Docker volume between
+runs; `docker compose down -v` deletes it. Use `APP_PORT=8081 docker compose up` if 8080 is taken.
+
 ## Running locally
 
 **Requirements:** Java 25 and a MySQL 8 server with an empty database.

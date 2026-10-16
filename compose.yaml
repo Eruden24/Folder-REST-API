@@ -1,0 +1,35 @@
+# Runs MySQL and the app together: docker compose up --build
+# DB_USERNAME and DB_PASSWORD come from .env (compose reads it automatically).
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: eruden
+      MYSQL_USER: ${DB_USERNAME:?set DB_USERNAME in .env}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      # The app never uses root, so let MySQL pick a random root password
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      # TCP ping, so it only passes once the real server (not the init one) is up
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://db:3306/eruden
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+volumes:
+  db-data:

@@ -1,0 +1,5 @@
+target
+.git
+.idea
+# Never bake real credentials into the image; compose passes them in at runtime
+.env

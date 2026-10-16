@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 
 import java.util.Optional;
@@ -38,7 +39,7 @@ public class FolderServiceValidatorTest {
     }
 
     @Test
-    void validationCreation_passes_whenParentExists() {
+    void validateCreation_passes_whenParentExists() {
         FolderRequest request = FolderRequest.builder().subject("Docs").parentId(1L).build();
         when(folderRepository.findById(1L)).thenReturn(Optional.of(new Folder()));
 
@@ -46,7 +47,7 @@ public class FolderServiceValidatorTest {
     }
 
     @Test
-    void validationCreation_passes_whenParentIsDifferentFolder() {
+    void validateUpdate_passes_whenParentIsDifferentFolder() {
         FolderRequest request = FolderRequest.builder().subject("Docs").parentId(3L).build();
 
         when(folderRepository.findById(3L)).thenReturn(Optional.of(new Folder()));
@@ -61,7 +62,7 @@ public class FolderServiceValidatorTest {
         verifyNoInteractions(folderRepository);
     }
     @Test
-    void validationCreation_throws_whenParentIdIsNotPresent() {
+    void validateCreation_throws_whenParentIdIsNotPresent() {
         FolderRequest request = FolderRequest.builder().subject("Docs").parentId(99L).build();
 
         when(folderRepository.findById(99L)).thenReturn(Optional.empty());
@@ -79,5 +80,49 @@ public class FolderServiceValidatorTest {
         assertThatThrownBy(() -> validator.validateUpdate(request, 5L))
                 .isInstanceOf(ValidationException.class)
                 .hasMessage("A folder cannot be its own parent");
+    }
+
+    @Test
+    void validateUpdate_throws_whenNewParentIsASubfolder() {
+        // Tree: 5 → 6 → 7. Moving 5 into 7 would make 5 its own grandchild.
+        Folder folder5 = folder(5L, null);
+        Folder folder6 = folder(6L, folder5);
+        Folder folder7 = folder(7L, folder6);
+        FolderRequest request = FolderRequest.builder().subject("Docs").parentId(7L).build();
+        when(folderRepository.findById(7L)).thenReturn(Optional.of(folder7));
+
+        assertThatThrownBy(() -> validator.validateUpdate(request, 5L))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("A folder cannot be moved into one of its own subfolders");
+    }
+
+    @Test
+    void validateUpdate_passes_whenNewParentIsInAnotherBranch() {
+        // Tree: 1 → 2 and 1 → 5. Moving 5 into 2 is fine: 2 is a sibling, not a subfolder.
+        Folder folder1 = folder(1L, null);
+        Folder folder2 = folder(2L, folder1);
+        FolderRequest request = FolderRequest.builder().subject("Docs").parentId(2L).build();
+        when(folderRepository.findById(2L)).thenReturn(Optional.of(folder2));
+
+        assertThatCode(() -> validator.validateUpdate(request, 5L)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void validateUpdate_stops_whenExistingDataAlreadyHasALoop() {
+        // 8 and 9 point at each other (saved before the loop check existed). The walk must end.
+        Folder folder8 = folder(8L, null);
+        Folder folder9 = folder(9L, folder8);
+        folder8.setParentFolder(folder9);
+        FolderRequest request = FolderRequest.builder().subject("Docs").parentId(9L).build();
+        when(folderRepository.findById(9L)).thenReturn(Optional.of(folder9));
+
+        assertThatCode(() -> validator.validateUpdate(request, 5L)).doesNotThrowAnyException();
+    }
+
+    private static Folder folder(Long id, Folder parent) {
+        Folder folder = new Folder();
+        ReflectionTestUtils.setField(folder, "id", id);
+        folder.setParentFolder(parent);
+        return folder;
     }
 }

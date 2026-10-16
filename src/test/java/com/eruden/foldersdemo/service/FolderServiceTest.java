@@ -16,6 +16,11 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -201,34 +206,54 @@ class FolderServiceTest {
         verify(folderRepository, never()).delete(any());
     }
 
-    // ---------- getAll / getChildren ----------
+    // ---------- getAll / getTopLevel / getChildren ----------
 
     @Test
-    void getAll_returnsEveryFolderMapped() {
-        List<Folder> folders = List.of(folder(1L, "A"), folder(2L, "B"));
-        List<FolderAllFieldsResponse> responses = List.of(
-                FolderAllFieldsResponse.builder().id(1L).build(),
-                FolderAllFieldsResponse.builder().id(2L).build());
-        when(folderRepository.findAll()).thenReturn(folders);
-        when(folderServiceMapper.toFolderAllFieldsResponses(folders)).thenReturn(responses);
+    void getAll_returnsTheRequestedPage_mapped() {
+        Pageable pageable = PageRequest.of(0, 2);
+        Folder a = folder(1L, "A");
+        Folder b = folder(2L, "B");
+        when(folderRepository.findAll(pageable)).thenReturn(new PageImpl<>(List.of(a, b), pageable, 5));
+        when(folderServiceMapper.toFolderAllFieldsResponse(a)).thenReturn(FolderAllFieldsResponse.builder().id(1L).build());
+        when(folderServiceMapper.toFolderAllFieldsResponse(b)).thenReturn(FolderAllFieldsResponse.builder().id(2L).build());
 
-        assertThat(folderService.getAll()).isSameAs(responses);
+        Page<FolderAllFieldsResponse> result = folderService.getAll(pageable);
+
+        assertThat(result.getContent()).extracting(FolderAllFieldsResponse::getId).containsExactly(1L, 2L);
+        // The totals come from the database page, not from the 2 items on this page
+        assertThat(result.getTotalElements()).isEqualTo(5);
     }
 
     @Test
-    void getChildren_returnsTopLevelFolders_whenParentIdIsNull() {
-        folderService.getChildren(null);
+    void getTopLevel_returnsFoldersWithoutParent() {
+        List<Folder> roots = List.of(folder(1L, "Root"));
+        List<FolderAllFieldsResponse> responses = List.of(FolderAllFieldsResponse.builder().id(1L).build());
+        when(folderRepository.findAllByParentFolderIsNull()).thenReturn(roots);
+        when(folderServiceMapper.toFolderAllFieldsResponses(roots)).thenReturn(responses);
 
-        verify(folderRepository).findAllByParentFolderIsNull();
+        assertThat(folderService.getTopLevel()).isSameAs(responses);
+    }
+
+    @Test
+    void getChildren_returnsChildrenOfTheGivenFolder() {
+        List<Folder> children = List.of(folder(6L, "Child"));
+        List<FolderAllFieldsResponse> responses = List.of(FolderAllFieldsResponse.builder().id(6L).build());
+        when(folderRepository.existsById(5L)).thenReturn(true);
+        when(folderRepository.findAllByParentFolderId(5L)).thenReturn(children);
+        when(folderServiceMapper.toFolderAllFieldsResponses(children)).thenReturn(responses);
+
+        assertThat(folderService.getChildren(5L)).isSameAs(responses);
+    }
+
+    @Test
+    void getChildren_throwsNotFound_whenParentDoesNotExist() {
+        when(folderRepository.existsById(99L)).thenReturn(false);
+
+        assertThatThrownBy(() -> folderService.getChildren(99L))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Folder not found");
+
         verify(folderRepository, never()).findAllByParentFolderId(any());
-    }
-
-    @Test
-    void getChildren_returnsChildrenOfTheGivenFolder_whenParentIdIsGiven() {
-        folderService.getChildren(5L);
-
-        verify(folderRepository).findAllByParentFolderId(5L);
-        verify(folderRepository, never()).findAllByParentFolderIsNull();
     }
 
     // ---------- helpers ----------
@@ -237,9 +262,12 @@ class FolderServiceTest {
         return FolderRequest.builder().subject(subject).parentId(parentId).build();
     }
 
+    /**
+     * {@code Folder} has no {@code setId} (only the database assigns ids), so tests set the field directly.
+     */
     private static Folder folder(Long id, String subject) {
         Folder folder = new Folder();
-        folder.setId(id);
+        ReflectionTestUtils.setField(folder, "id", id);
         folder.setSubject(subject);
         return folder;
     }

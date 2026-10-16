@@ -6,7 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.sql.Timestamp;
+import java.time.Instant;
 
 @Schema(description = "All fields of a folder.")
 @Data
@@ -24,9 +24,9 @@ public class FolderAllFieldsResponse {
     @Schema(description = "Name of the folder.", example = "Projects")
     private String subject;
 
-    @Schema(description = "When the folder was created.", example = "2026-10-15T09:30:00.000+00:00")
-    private Timestamp created;
+    @Schema(description = "When the folder was created.", example = "2026-10-15T09:30:00.123456Z")
+    private Instant created;
 
-    @Schema(description = "When the folder was last changed.", example = "2026-10-15T10:45:00.000+00:00")
-    private Timestamp updated;
+    @Schema(description = "When the folder was last changed.", example = "2026-10-15T10:45:00.654321Z")
+    private Instant updated;
 }

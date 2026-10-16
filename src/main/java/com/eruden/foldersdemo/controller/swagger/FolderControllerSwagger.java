@@ -14,18 +14,24 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Positive;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.data.web.PagedModel;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
 /**
- * OpenAPI (Swagger) contract for {@code /api/folder}.
+ * OpenAPI (Swagger) contract for {@code /api/folders}.
  * <p>
  * Validation annotations ({@code @Valid}, {@code @Positive}) live here and not on the controller:
  * Bean Validation forbids adding parameter constraints on a method that implements an interface method.
+ * <p>
+ * Every error response uses the {@link ProblemDetail} format ({@code application/problem+json}).
+ * Validation errors add an {@code errors} map: field or parameter name → message.
  */
 @Tag(name = "Folders", description = "Create, read, update and delete folders and browse the folder tree.")
 public interface FolderControllerSwagger {
@@ -36,7 +42,7 @@ public interface FolderControllerSwagger {
                     + "or the id of an existing folder to create a subfolder. Returns the id of the new folder."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Folder created.",
+            @ApiResponse(responseCode = "201", description = "Folder created.",
                     content = @Content(mediaType = "application/json",
                             schema = @Schema(implementation = FolderResponse.class))),
             @ApiResponse(responseCode = "400",
@@ -44,7 +50,9 @@ public interface FolderControllerSwagger {
                             + "or the given parent folder does not exist.",
                     content = @Content(mediaType = "application/problem+json",
                             schema = @Schema(implementation = ProblemDetail.class))),
-            @ApiResponse(responseCode = "500", description = "Unexpected server error.", content = @Content)
+            @ApiResponse(responseCode = "500", description = "Unexpected server error.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)))
     })
     FolderResponse create(@RequestBody @Valid FolderRequest folderRequest);
 
@@ -57,13 +65,18 @@ public interface FolderControllerSwagger {
             @ApiResponse(responseCode = "200", description = "Folder deleted.",
                     content = @Content(mediaType = "application/json",
                             schema = @Schema(implementation = FolderResponse.class))),
-            @ApiResponse(responseCode = "400", description = "The id is not a positive number.", content = @Content),
+            @ApiResponse(responseCode = "400", description = "The id is not a positive number.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class))),
             @ApiResponse(responseCode = "404", description = "No folder with this id.",
                     content = @Content(mediaType = "application/problem+json",
                             schema = @Schema(implementation = ProblemDetail.class))),
-            @ApiResponse(responseCode = "500",
-                    description = "The folder still has subfolders (blocked by the database), or an unexpected server error.",
-                    content = @Content)
+            @ApiResponse(responseCode = "409", description = "The folder still has subfolders.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class))),
+            @ApiResponse(responseCode = "500", description = "Unexpected server error.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)))
     })
     FolderResponse delete(
             @Parameter(description = "Id of the folder to delete.", example = "1")
@@ -77,11 +90,15 @@ public interface FolderControllerSwagger {
             @ApiResponse(responseCode = "200", description = "Folder found.",
                     content = @Content(mediaType = "application/json",
                             schema = @Schema(implementation = FolderAllFieldsResponse.class))),
-            @ApiResponse(responseCode = "400", description = "The id is not a positive number.", content = @Content),
+            @ApiResponse(responseCode = "400", description = "The id is not a positive number.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class))),
             @ApiResponse(responseCode = "404", description = "No folder with this id.",
                     content = @Content(mediaType = "application/problem+json",
                             schema = @Schema(implementation = ProblemDetail.class))),
-            @ApiResponse(responseCode = "500", description = "Unexpected server error.", content = @Content)
+            @ApiResponse(responseCode = "500", description = "Unexpected server error.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)))
     })
     FolderAllFieldsResponse getById(
             @Parameter(description = "Id of the folder.", example = "1")
@@ -91,7 +108,7 @@ public interface FolderControllerSwagger {
             summary = "Replace a folder",
             description = "Replaces the subject and the parent of the folder. Both fields are always written: "
                     + "sending `parentId: null` moves the folder to the top level. "
-                    + "A folder cannot be its own parent."
+                    + "A folder cannot be its own parent, and cannot be moved into one of its own subfolders."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Folder updated. Returns the folder after the update.",
@@ -99,12 +116,15 @@ public interface FolderControllerSwagger {
                             schema = @Schema(implementation = FolderAllFieldsResponse.class))),
             @ApiResponse(responseCode = "400",
                     description = "Invalid body or id, the parent folder does not exist, "
-                            + "or the folder was set as its own parent.",
-                    content = @Content),
+                            + "or the move would put the folder inside itself.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class))),
             @ApiResponse(responseCode = "404", description = "No folder with this id.",
                     content = @Content(mediaType = "application/problem+json",
                             schema = @Schema(implementation = ProblemDetail.class))),
-            @ApiResponse(responseCode = "500", description = "Unexpected server error.", content = @Content)
+            @ApiResponse(responseCode = "500", description = "Unexpected server error.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)))
     })
     FolderAllFieldsResponse update(
             @Parameter(description = "Id of the folder to update.", example = "1")
@@ -121,11 +141,14 @@ public interface FolderControllerSwagger {
                             schema = @Schema(implementation = FolderAllFieldsResponse.class))),
             @ApiResponse(responseCode = "400",
                     description = "Invalid body (blank subject or longer than 50 characters) or invalid id.",
-                    content = @Content),
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class))),
             @ApiResponse(responseCode = "404", description = "No folder with this id.",
                     content = @Content(mediaType = "application/problem+json",
                             schema = @Schema(implementation = ProblemDetail.class))),
-            @ApiResponse(responseCode = "500", description = "Unexpected server error.", content = @Content)
+            @ApiResponse(responseCode = "500", description = "Unexpected server error.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)))
     })
     FolderAllFieldsResponse updateSubject(
             @Parameter(description = "Id of the folder to rename.", example = "1")
@@ -133,32 +156,55 @@ public interface FolderControllerSwagger {
             @RequestBody @Valid FolderSubjectRequest folderSubjectRequest);
 
     @Operation(
-            summary = "List all folders",
-            description = "Returns every folder, top-level folders and subfolders, in one flat list. "
+            summary = "List all folders (paged)",
+            description = "Returns every folder, top-level folders and subfolders, one page at a time. "
+                    + "Use `page` (starts at 0), `size` (default 20, max 100) and `sort` (e.g. `subject,asc`). "
                     + "Use `parentId` in each item to rebuild the tree."
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "All folders (empty list if there are none).",
+            @ApiResponse(responseCode = "200", description = "One page of folders, with the page number and totals."),
+            @ApiResponse(responseCode = "400", description = "Invalid paging parameters.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class))),
+            @ApiResponse(responseCode = "500", description = "Unexpected server error.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    PagedModel<FolderAllFieldsResponse> getAll(@ParameterObject @PageableDefault(size = 20, sort = "id") Pageable pageable);
+
+    @Operation(
+            summary = "List the top-level folders",
+            description = "Returns the folders that have no parent: the roots of the tree."
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Top-level folders (empty list if there are none).",
                     content = @Content(mediaType = "application/json",
                             array = @ArraySchema(schema = @Schema(implementation = FolderAllFieldsResponse.class)))),
-            @ApiResponse(responseCode = "500", description = "Unexpected server error.", content = @Content)
+            @ApiResponse(responseCode = "500", description = "Unexpected server error.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)))
     })
-    List<FolderAllFieldsResponse> getAll();
+    List<FolderAllFieldsResponse> getTopLevel();
 
     @Operation(
             summary = "List the direct children of a folder",
-            description = "Returns the folders directly inside the given folder (not their subfolders). "
-                    + "Leave `parentId` out to get the top-level folders. "
-                    + "An id that does not exist returns an empty list."
+            description = "Returns the folders directly inside the given folder (not their subfolders)."
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Child folders (empty list if there are none).",
                     content = @Content(mediaType = "application/json",
                             array = @ArraySchema(schema = @Schema(implementation = FolderAllFieldsResponse.class)))),
-            @ApiResponse(responseCode = "400", description = "`parentId` is not a number.", content = @Content),
-            @ApiResponse(responseCode = "500", description = "Unexpected server error.", content = @Content)
+            @ApiResponse(responseCode = "400", description = "The id is not a positive number.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class))),
+            @ApiResponse(responseCode = "404", description = "No folder with this id.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class))),
+            @ApiResponse(responseCode = "500", description = "Unexpected server error.",
+                    content = @Content(mediaType = "application/problem+json",
+                            schema = @Schema(implementation = ProblemDetail.class)))
     })
     List<FolderAllFieldsResponse> getChildren(
-            @Parameter(description = "Id of the parent folder. Leave out to get the top-level folders.", example = "1")
-            @RequestParam(required = false) Long parentId);
+            @Parameter(description = "Id of the parent folder.", example = "1")
+            @PathVariable @Positive Long id);
 }

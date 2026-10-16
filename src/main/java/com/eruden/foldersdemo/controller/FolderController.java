@@ -7,12 +7,15 @@ import com.eruden.foldersdemo.controller.dto.response.FolderResponse;
 import com.eruden.foldersdemo.controller.swagger.FolderControllerSwagger;
 import com.eruden.foldersdemo.service.FolderService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PagedModel;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 /**
- * REST endpoints for managing folders, under {@code /api/folder}.
+ * REST endpoints for managing folders, under {@code /api/folders}.
  * <p>
  * Folders form a tree: a folder with {@code parentId = null} is a top-level folder,
  * any other folder sits inside its parent.
@@ -21,11 +24,11 @@ import java.util.List;
  * are declared in {@link FolderControllerSwagger}. Spring and Bean Validation read them from there,
  * so they still apply to the methods below.
  * <p>
- * Errors are turned into responses by
+ * Every error is returned in the same {@code ProblemDetail} format by
  * {@link com.eruden.foldersdemo.exception.GlobalExceptionHandler}.
  */
 @RestController
-@RequestMapping("/api/folder")
+@RequestMapping("/api/folders")
 @RequiredArgsConstructor
 public class FolderController implements FolderControllerSwagger {
 
@@ -34,7 +37,7 @@ public class FolderController implements FolderControllerSwagger {
     /**
      * Creates a new folder.
      * <p>
-     * {@code POST /api/folder}
+     * {@code POST /api/folders} → {@code 201 Created}
      * <p>
      * Leave {@code parentId} out or send {@code null} to create a top-level folder.
      * Send the id of an existing folder to create a subfolder inside it.
@@ -50,6 +53,7 @@ public class FolderController implements FolderControllerSwagger {
      */
     @Override
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public FolderResponse create(@RequestBody FolderRequest folderRequest) {
         return folderService.create(folderRequest);
     }
@@ -57,7 +61,7 @@ public class FolderController implements FolderControllerSwagger {
     /**
      * Deletes a folder.
      * <p>
-     * {@code DELETE /api/folder/{id}}
+     * {@code DELETE /api/folders/{id}}
      * <p>
      * A folder that still has subfolders cannot be deleted: the database blocks it
      * ({@code ON DELETE RESTRICT}). Delete or move its subfolders first.
@@ -65,9 +69,7 @@ public class FolderController implements FolderControllerSwagger {
      * @param id the id of the folder to delete; must be positive
      * @return the id of the deleted folder
      * @throws com.eruden.foldersdemo.exception.NotFoundException if no folder has this id (404)
-     * @throws org.springframework.dao.DataIntegrityViolationException if the folder still has subfolders
-     *                                                                 (currently a 500, because no handler
-     *                                                                 maps it yet)
+     * @throws org.springframework.dao.DataIntegrityViolationException if the folder still has subfolders (409)
      */
     @Override
     @DeleteMapping("/{id}")
@@ -78,7 +80,7 @@ public class FolderController implements FolderControllerSwagger {
     /**
      * Returns one folder with all its fields.
      * <p>
-     * {@code GET /api/folder/{id}}
+     * {@code GET /api/folders/{id}}
      *
      * @param id the id of the folder; must be positive
      * @return the folder's id, subject, parent id ({@code null} for a top-level folder),
@@ -94,7 +96,7 @@ public class FolderController implements FolderControllerSwagger {
     /**
      * Replaces a folder's subject and parent.
      * <p>
-     * {@code PUT /api/folder/{id}}
+     * {@code PUT /api/folders/{id}}
      * <p>
      * Both fields are always written. Sending {@code parentId: null} moves the folder to the top level,
      * so send the current parent id if you only want to change the subject, or use
@@ -102,13 +104,15 @@ public class FolderController implements FolderControllerSwagger {
      *
      * @param id            the id of the folder to update; must be positive
      * @param folderRequest the new values: {@code subject} (required, not blank, at most 50 characters) and
-     *                      {@code parentId} (optional, id of an existing folder other than this one)
+     *                      {@code parentId} (optional, id of an existing folder that is not this folder
+     *                      and not one of its subfolders)
      * @return the folder after the update, with the new update time
      * @throws com.eruden.foldersdemo.exception.NotFoundException   if no folder has this id (404)
      * @throws com.eruden.foldersdemo.exception.ValidationException if the parent folder does not exist,
-     *                                                             or {@code parentId} equals {@code id} (400)
-     * @throws org.springframework.web.bind.MethodArgumentNotValidException if the body breaks a validation
-     *                                                                     rule (400)
+     *                                                             is this folder, or is one of its
+     *                                                             subfolders (400)
+     * @throws org.springframework.web.method.annotation.HandlerMethodValidationException if the id or the
+     *                                                                                   body is invalid (400)
      */
     @Override
     @PutMapping("/{id}")
@@ -120,7 +124,7 @@ public class FolderController implements FolderControllerSwagger {
     /**
      * Renames a folder without moving it.
      * <p>
-     * {@code PATCH /api/folder/{id}}
+     * {@code PATCH /api/folders/{id}}
      * <p>
      * Only the subject changes; the parent stays the same.
      *
@@ -128,8 +132,8 @@ public class FolderController implements FolderControllerSwagger {
      * @param folderSubjectRequest the new {@code subject} (required, not blank, at most 50 characters)
      * @return the folder after the update, with the new update time
      * @throws com.eruden.foldersdemo.exception.NotFoundException if no folder has this id (404)
-     * @throws org.springframework.web.bind.MethodArgumentNotValidException if the body breaks a validation
-     *                                                                     rule (400)
+     * @throws org.springframework.web.method.annotation.HandlerMethodValidationException if the id or the
+     *                                                                                   body is invalid (400)
      */
     @Override
     @PatchMapping("/{id}")
@@ -139,35 +143,51 @@ public class FolderController implements FolderControllerSwagger {
     }
 
     /**
-     * Returns every folder in one flat list.
+     * Returns all folders, one page at a time.
      * <p>
-     * {@code GET /api/folder/all}
+     * {@code GET /api/folders?page=0&size=20&sort=subject,asc}
      * <p>
-     * The list contains top-level folders and subfolders together; use each item's {@code parentId}
-     * to rebuild the tree. To browse one level at a time, use {@link #getChildren(Long)}.
+     * Defaults: page 0, 20 folders per page, sorted by id. At most 100 per page
+     * ({@code spring.data.web.pageable.max-page-size}). The list contains top-level folders and subfolders
+     * together; use each item's {@code parentId} to rebuild the tree, or browse one level at a time with
+     * {@link #getTopLevel()} and {@link #getChildren(Long)}.
      *
-     * @return all folders, or an empty list if there are none
+     * @param pageable which page, how many per page, and the sort order (from the query parameters)
+     * @return the folders on the requested page, plus the page number, size and totals
      */
     @Override
-    @GetMapping("/all")
-    public List<FolderAllFieldsResponse> getAll() {
-        return folderService.getAll();
+    @GetMapping
+    public PagedModel<FolderAllFieldsResponse> getAll(Pageable pageable) {
+        return new PagedModel<>(folderService.getAll(pageable));
+    }
+
+    /**
+     * Returns the top-level folders (those without a parent).
+     * <p>
+     * {@code GET /api/folders/top-level}
+     *
+     * @return the top-level folders, or an empty list if there are none
+     */
+    @Override
+    @GetMapping("/top-level")
+    public List<FolderAllFieldsResponse> getTopLevel() {
+        return folderService.getTopLevel();
     }
 
     /**
      * Returns the folders directly inside a folder.
      * <p>
-     * {@code GET /api/folder/children?parentId={parentId}}
+     * {@code GET /api/folders/{id}/children}
      * <p>
      * Only one level is returned: the children, not the children's subfolders.
-     * Leave {@code parentId} out to get the top-level folders.
      *
-     * @param parentId the id of the parent folder, or {@code null} (parameter left out) for the top level
-     * @return the direct children; an empty list if the folder has none or does not exist
+     * @param id the id of the parent folder; must be positive
+     * @return the direct children, or an empty list if the folder has none
+     * @throws com.eruden.foldersdemo.exception.NotFoundException if no folder has this id (404)
      */
     @Override
-    @GetMapping("/children")
-    public List<FolderAllFieldsResponse> getChildren(@RequestParam(required = false) Long parentId) {
-        return folderService.getChildren(parentId);
+    @GetMapping("/{id}/children")
+    public List<FolderAllFieldsResponse> getChildren(@PathVariable Long id) {
+        return folderService.getChildren(id);
     }
 }

@@ -15,22 +15,19 @@ import java.util.List;
 @Mapper(componentModel="spring", uses={FolderServiceMapperHelper.class})
 public interface FolderServiceMapper {
 
-    // Request -> Entity
-    @Mapping(target="id", ignore = true)
+    // Request -> Entity (id has no setter, so MapStruct never writes it)
     @Mapping(target="parentFolder", source = "parentId", qualifiedByName = "parentIdToParentFolder")
     @Mapping(target="createdAt", ignore=true)
     @Mapping(target="updatedAt", ignore=true)
     @Mapping(target="subject", source="subject")
     Folder toFolder(FolderRequest request);
 
-    @Mapping(target="id",  ignore = true)
     @Mapping(target="parentFolder", source = "parentId", qualifiedByName = "parentIdToParentFolder")
     @Mapping(target="createdAt",  ignore = true)
     @Mapping(target="updatedAt",  ignore = true)
     @Mapping(target="subject", source="subject")
     void updateFolder(FolderRequest request, @MappingTarget Folder folder);
 
-    @Mapping(target="id",  ignore = true)
     @Mapping(target="parentFolder",  ignore = true)
     @Mapping(target="createdAt",  ignore = true)
     @Mapping(target="updatedAt",  ignore = true)

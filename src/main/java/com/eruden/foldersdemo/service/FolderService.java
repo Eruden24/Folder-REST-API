@@ -9,13 +9,16 @@ import com.eruden.foldersdemo.exception.NotFoundException;
 import com.eruden.foldersdemo.repository.FolderRepository;
 import com.eruden.foldersdemo.service.mapper.FolderServiceMapper;
 import com.eruden.foldersdemo.service.validator.FolderServiceValidator;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class FolderService {
@@ -28,25 +31,25 @@ public class FolderService {
     public FolderResponse create(FolderRequest request) {
         folderServiceValidator.validateCreation(request);
 
-        Folder folder = folderServiceMapper.toFolder(request);
+        Folder saved = folderRepository.save(folderServiceMapper.toFolder(request));
+        log.info("Created folder {} with parent {}", saved.getId(), request.getParentId());
 
-        return folderServiceMapper.toFolderResponse(folderRepository.save(folder));
+        return folderServiceMapper.toFolderResponse(saved);
     }
-    
+
     @Transactional
     public FolderResponse delete(Long id) {
         Folder folder = findFolder(id);
 
         folderRepository.delete(folder);
+        log.info("Deleting folder {}", id);
 
         return folderServiceMapper.toFolderResponse(folder);
     }
 
+    @Transactional(readOnly = true)
     public FolderAllFieldsResponse getById(Long id) {
-
-        Folder folder = findFolder(id);
-
-        return folderServiceMapper.toFolderAllFieldsResponse(folder);
+        return folderServiceMapper.toFolderAllFieldsResponse(findFolder(id));
     }
 
     @Transactional
@@ -55,6 +58,7 @@ public class FolderService {
 
         Folder folder = findFolder(id);
         folderServiceMapper.updateFolder(request, folder);
+        log.info("Updated folder {}: parent is now {}", id, request.getParentId());
 
         return folderServiceMapper.toFolderAllFieldsResponse(folderRepository.saveAndFlush(folder));
     }
@@ -64,28 +68,33 @@ public class FolderService {
         Folder folder = findFolder(id);
 
         folderServiceMapper.updateSubject(request, folder);
+        log.info("Renamed folder {}", id);
 
         return folderServiceMapper.toFolderAllFieldsResponse(folderRepository.saveAndFlush(folder));
     }
 
-    public List<FolderAllFieldsResponse> getAll() {
-        List<Folder> folders = folderRepository.findAll();
+    @Transactional(readOnly = true)
+    public Page<FolderAllFieldsResponse> getAll(Pageable pageable) {
+        return folderRepository.findAll(pageable).map(folderServiceMapper::toFolderAllFieldsResponse);
+    }
 
-        return folderServiceMapper.toFolderAllFieldsResponses(folders);
+    @Transactional(readOnly = true)
+    public List<FolderAllFieldsResponse> getTopLevel() {
+        return folderServiceMapper.toFolderAllFieldsResponses(folderRepository.findAllByParentFolderIsNull());
+    }
+
+    @Transactional(readOnly = true)
+    public List<FolderAllFieldsResponse> getChildren(Long parentId) {
+        if (!folderRepository.existsById(parentId)) {
+            throw new NotFoundException("Folder not found");
+        }
+
+        return folderServiceMapper.toFolderAllFieldsResponses(folderRepository.findAllByParentFolderId(parentId));
     }
 
     private Folder findFolder(Long id) {
         return folderRepository.findById(id).orElseThrow(
                 () -> new NotFoundException("Folder not found")
         );
-    }
-
-    public List<FolderAllFieldsResponse> getChildren(Long parentId) {
-
-        List<Folder> children = (parentId == null)
-                ? folderRepository.findAllByParentFolderIsNull()
-                : folderRepository.findAllByParentFolderId(parentId);
-
-        return folderServiceMapper.toFolderAllFieldsResponses(children);
     }
 }

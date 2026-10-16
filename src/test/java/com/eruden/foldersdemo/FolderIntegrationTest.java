@@ -12,10 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.sql.SQLIntegrityConstraintViolationException;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -60,7 +57,7 @@ class FolderIntegrationTest {
     void createdFolder_canBeReadBack_withTimestampsFilledIn() throws Exception {
         long id = createFolder("Docs", null);
 
-        mockMvc.perform(get("/api/folder/{id}", id))
+        mockMvc.perform(get("/api/folders/{id}", id))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.subject").value("Docs"))
                 .andExpect(jsonPath("$.parentId").value(nullValue()))
@@ -73,15 +70,15 @@ class FolderIntegrationTest {
         long rootId = createFolder("Root", null);
         long childId = createFolder("Child", rootId);
 
-        mockMvc.perform(get("/api/folder/{id}", childId))
+        mockMvc.perform(get("/api/folders/{id}", childId))
                 .andExpect(jsonPath("$.parentId").value(rootId));
 
-        mockMvc.perform(get("/api/folder/children").param("parentId", String.valueOf(rootId)))
+        mockMvc.perform(get("/api/folders/{id}/children", rootId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].subject").value("Child"));
 
-        mockMvc.perform(get("/api/folder/children"))
+        mockMvc.perform(get("/api/folders/top-level"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].subject").value("Root"));
@@ -89,7 +86,7 @@ class FolderIntegrationTest {
 
     @Test
     void create_returns400_whenParentDoesNotExist() throws Exception {
-        mockMvc.perform(post("/api/folder")
+        mockMvc.perform(post("/api/folders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"subject": "Orphan", "parentId": 999999}
@@ -105,7 +102,7 @@ class FolderIntegrationTest {
         long rootId = createFolder("Root", null);
         long folderId = createFolder("Old name", null);
 
-        mockMvc.perform(put("/api/folder/{id}", folderId)
+        mockMvc.perform(put("/api/folders/{id}", folderId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"subject": "New name", "parentId": %d}
@@ -123,7 +120,7 @@ class FolderIntegrationTest {
         long rootId = createFolder("Root", null);
         long childId = createFolder("Child", rootId);
 
-        mockMvc.perform(put("/api/folder/{id}", childId)
+        mockMvc.perform(put("/api/folders/{id}", childId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"subject": "Child", "parentId": null}
@@ -136,7 +133,7 @@ class FolderIntegrationTest {
     void update_returns400_whenFolderIsItsOwnParent() throws Exception {
         long id = createFolder("Docs", null);
 
-        mockMvc.perform(put("/api/folder/{id}", id)
+        mockMvc.perform(put("/api/folders/{id}", id)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"subject": "Docs", "parentId": %d}
@@ -150,7 +147,7 @@ class FolderIntegrationTest {
         long rootId = createFolder("Root", null);
         long childId = createFolder("Child", rootId);
 
-        mockMvc.perform(patch("/api/folder/{id}", childId)
+        mockMvc.perform(patch("/api/folders/{id}", childId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"subject": "Renamed"}
@@ -164,28 +161,62 @@ class FolderIntegrationTest {
     void delete_removesTheFolder() throws Exception {
         long id = createFolder("Docs", null);
 
-        mockMvc.perform(delete("/api/folder/{id}", id))
+        mockMvc.perform(delete("/api/folders/{id}", id))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id));
 
-        mockMvc.perform(get("/api/folder/{id}", id))
+        mockMvc.perform(get("/api/folders/{id}", id))
                 .andExpect(status().isNotFound());
     }
 
-    /**
-     * Documents current behaviour: the database refuses ({@code ON DELETE RESTRICT}), and because
-     * no handler maps that error yet, it escapes the controller (a 500 in the running app).
-     * Once a {@code DataIntegrityViolationException} handler is added, change this test to expect 409.
-     */
     @Test
-    void delete_isRejectedByTheDatabase_whenFolderHasChildren() throws Exception {
+    void delete_returns409_andKeepsBothFolders_whenFolderHasChildren() throws Exception {
         long rootId = createFolder("Root", null);
         createFolder("Child", rootId);
 
-        assertThatThrownBy(() -> mockMvc.perform(delete("/api/folder/{id}", rootId)))
-                .hasRootCauseInstanceOf(SQLIntegrityConstraintViolationException.class);
+        mockMvc.perform(delete("/api/folders/{id}", rootId))
+                .andExpect(status().isConflict());
 
         assertThat(folderRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void update_returns400_whenFolderIsMovedIntoItsOwnSubfolder() throws Exception {
+        // Tree: A → B → C. Moving A into C would create a loop.
+        long a = createFolder("A", null);
+        long b = createFolder("B", a);
+        long c = createFolder("C", b);
+
+        mockMvc.perform(put("/api/folders/{id}", a)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"subject": "A", "parentId": %d}
+                                """.formatted(c)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("A folder cannot be moved into one of its own subfolders"));
+
+        mockMvc.perform(get("/api/folders/{id}", a))
+                .andExpect(jsonPath("$.parentId").value(nullValue()));
+    }
+
+    @Test
+    void getChildren_returns404_whenParentDoesNotExist() throws Exception {
+        mockMvc.perform(get("/api/folders/{id}/children", 999999))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getAll_returnsFoldersPageByPage() throws Exception {
+        for (int i = 1; i <= 5; i++) {
+            createFolder("Folder " + i, null);
+        }
+
+        mockMvc.perform(get("/api/folders").param("size", "2").param("page", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(1))
+                .andExpect(jsonPath("$.content[0].subject").value("Folder 5"))
+                .andExpect(jsonPath("$.page.totalElements").value(5))
+                .andExpect(jsonPath("$.page.totalPages").value(3));
     }
 
     /** Creates a folder through the API and returns its id. */
@@ -194,10 +225,10 @@ class FolderIntegrationTest {
                 {"subject": "%s", "parentId": %s}
                 """.formatted(subject, parentId);
 
-        String response = mockMvc.perform(post("/api/folder")
+        String response = mockMvc.perform(post("/api/folders")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
-                .andExpect(status().isOk())
+                .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
 
         return ((Number) JsonPath.read(response, "$.id")).longValue();

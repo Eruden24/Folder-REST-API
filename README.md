@@ -21,20 +21,25 @@ Folders can be created, renamed, moved and deleted; each folder can contain subf
    CREATE USER 'your_db_user'@'localhost' IDENTIFIED BY 'your_db_password';
    GRANT ALL ON eruden.* TO 'your_db_user'@'localhost';
    ```
-2. Start the app:
+2. Put the user and password in a `.env` file (it is ignored by git):
+   ```bash
+   cp .env.example .env
+   # then edit .env
+   ```
+3. Start the app:
    ```bash
    ./mvnw spring-boot:run
    ```
    Flyway creates the tables on the first start.
 
-The connection is configured through environment variables. The defaults in `application.properties`
-match the local setup above; set your own values for any other environment:
+The app reads these values from `.env` or from real environment variables (which win, so a server can
+set them without any file):
 
-| Variable      | Default (local only)                      |
-|---------------|-------------------------------------------|
-| `DB_URL`      | `jdbc:mysql://localhost:3306/eruden`      |
-| `DB_USERNAME` | (set in `.env`)                           |
-| `DB_PASSWORD` | (set in `.env`)                           |
+| Variable      | Required | Default                                |
+|---------------|----------|----------------------------------------|
+| `DB_USERNAME` | yes      |                                        |
+| `DB_PASSWORD` | yes      |                                        |
+| `DB_URL`      | no       | `jdbc:mysql://localhost:3306/eruden`   |
 
 ## API
 
